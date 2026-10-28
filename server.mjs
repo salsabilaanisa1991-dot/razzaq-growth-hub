@@ -6,8 +6,9 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHANNELS, DEFAULT_SETTINGS, STAGES, validateSettings, validateCampaign, validateLead, required, money, validDate, trackedDestination, createCaption, creativeBrief, csv } from './domain.mjs';
 import { paidAdsService } from './paid-ads-service.mjs';
+import { googleAdsService } from './google-ads-service.mjs';
 
-export function createApp({ dataDir = './data', password, publicOrigin = '', meta = {} } = {}) {
+export function createApp({ dataDir = './data', password, publicOrigin = '', meta = {}, google = {} } = {}) {
   if (!password || password.length < 12) throw Error('APP_PASSWORD minimal 12 karakter. Jalankan npm run setup dahulu.');
   if (publicOrigin && new URL(publicOrigin).protocol !== 'https:') throw Error('PUBLIC_ORIGIN harus HTTPS.');
   const origin = publicOrigin.replace(/\/$/, '');
@@ -27,6 +28,7 @@ export function createApp({ dataDir = './data', password, publicOrigin = '', met
   const id = prefix => `${prefix}_${randomBytes(9).toString('hex')}`;
   function mustGet(key, type) { const obj = get(key, type); if (!obj) { const e = Error('Data tidak ditemukan.'); e.status = 404; throw e; } return obj; }
   const paid=paidAdsService({save,get,list,mustGet,id,now,settings},meta);
+  const googleAds=googleAdsService({save,get,list,mustGet,id,now,settings},google);
   const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" };
   const send = (res, status, value, extra = {}) => { res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', ...extra }); res.end(Buffer.isBuffer(value) || typeof value === 'string' ? value : JSON.stringify(value)); };
   async function body(req,maxBytes=64000) {
@@ -81,9 +83,10 @@ export function createApp({ dataDir = './data', password, publicOrigin = '', met
         }
         if (path === '/api/data' && req.method === 'GET') return send(res, 200, {
           settings: settings(), campaigns: list('campaign'), posts: list('post'), leads: list('lead'), channels: CHANNELS, stages: STAGES,
-          clicks: db.prepare('SELECT post_id, COUNT(*) AS count FROM clicks GROUP BY post_id').all(), publicOrigin: origin, paidAds:paid.list(),meta:paid.status()
+          clicks: db.prepare('SELECT post_id, COUNT(*) AS count FROM clicks GROUP BY post_id').all(), publicOrigin: origin, paidAds:paid.list(),meta:paid.status(),googleAds:googleAds.list(),google:googleAds.status()
         });
         if(await paid.handle(path,req,res,{body,send}))return;
+        if(await googleAds.handle(path,req,res,{body,send}))return;
         if (path === '/api/settings' && req.method === 'PUT') {
           const b = validateSettings(await body(req));
           const s = { id: 'settings', ...b, updatedAt: now() };
@@ -168,11 +171,11 @@ export function createApp({ dataDir = './data', password, publicOrigin = '', met
           list('post').forEach(p => rows.push([p.id, get(p.campaignId, 'campaign')?.name, p.channel, p.plannedDate, p.status, p.caption, p.brief, p.destination, p.trackingUrl]));
           return send(res, 200, csv(rows), { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="materi-promosi.csv"' });
         }
-        if (path === '/api/export/backup.json' && req.method === 'GET') return send(res, 200, { version: 2, exportedAt: now(), settings: settings(), campaigns: list('campaign'), posts: list('post'), leads: list('lead'), paidAds:paid.export(), clicks: db.prepare('SELECT * FROM clicks').all() }, { 'Content-Disposition': 'attachment; filename="razzaq-backup.json"' });
+        if (path === '/api/export/backup.json' && req.method === 'GET') return send(res, 200, { version: 3, exportedAt: now(), settings: settings(), campaigns: list('campaign'), posts: list('post'), leads: list('lead'), paidAds:paid.export(),googleAds:googleAds.export(), clicks: db.prepare('SELECT * FROM clicks').all() }, { 'Content-Disposition': 'attachment; filename="razzaq-backup.json"' });
         return send(res, 404, { error: 'Endpoint tidak tersedia.' });
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'Metode tidak diizinkan.' });
-      const files = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/paid-ads.js':['paid-ads.js','text/javascript'], '/style.css': ['style.css', 'text/css'] };
+      const files = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/paid-ads.js':['paid-ads.js','text/javascript'], '/google-ads.js':['google-ads.js','text/javascript'], '/style.css': ['style.css', 'text/css'] };
       if (!files[path]) return send(res, 404, { error: 'Halaman tidak ditemukan.' });
       const [file, mime] = files[path];
       res.writeHead(200, { ...headers, 'Content-Type': `${mime}; charset=utf-8` });

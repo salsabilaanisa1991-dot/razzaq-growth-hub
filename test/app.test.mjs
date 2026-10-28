@@ -55,7 +55,7 @@ test('alur HTTP: autentikasi, kampanye, materi, tautan, booking, arsip dan persi
   assert.equal((await req(`/api/leads/${lead.id}`,'PATCH',{stage:'Batal'})).json.stage,'Batal');
   assert.equal((await req(`/api/campaigns/${c.id}`,'PATCH',{spend:50000})).json.spend,50000);
   assert.match((await req('/api/export/posts.csv')).text,/Brief visual/);
-  assert.equal((await req('/api/export/backup.json')).json.version,2);
+  assert.equal((await req('/api/export/backup.json')).json.version,3);
   const wa=(await req('/api/campaigns','POST',{...sample,name:'Penjemputan',channels:['WhatsApp Status'],target:'whatsapp'})).json;
   const waPost=(await req(`/api/campaigns/${wa.id}/generate`,'POST',{})).json[0];assert.match(waPost.destination,/https:\/\/wa.me\//);
   await req('/api/settings','PUT',{...DEFAULT_SETTINGS,phone:'6281234567890',contactVerified:true});

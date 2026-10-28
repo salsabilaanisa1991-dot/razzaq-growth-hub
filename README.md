@@ -1,4 +1,4 @@
-# Razzaq Growth Hub · v1.1
+# Razzaq Growth Hub · v1.2
 
 Ruang kerja promosi rentalmobilyogya.id untuk **menyiapkan dan mengevaluasi promosi di banyak kanal**. Bahasa Indonesia, tampilan HP/desktop, Node.js 24 dan SQLite. Tidak membutuhkan layanan AI atau paket npm eksternal.
 
@@ -13,10 +13,11 @@ Ruang kerja promosi rentalmobilyogya.id untuk **menyiapkan dan mengevaluasi prom
 - Input pengeluaran total aktual per kampanye, ringkasan nilai booking dan biaya per booking, ekspor caption CSV dan data JSON.
 - Data tersimpan di SQLite, tetap ada setelah server dimulai ulang. Tidak menyimpan kata sandi admin dalam database.
 - **Iklan berbayar Meta:** simpan draf bergambar, pilih feed Facebook/Instagram, lokasi Indonesia (negara/kota/provinsi), usia, jadwal WIB dan anggaran total. Adapter Marketing API mengirim objek dalam status PAUSED, membaca kembali konfigurasi, menyediakan pemeriksaan akhir/aktivasi, jeda, serta sinkronisasi status dan metrik. Memerlukan koneksi akun Meta sendiri; belum diuji dengan akun live pada sesi pengembangan ini.
+- **Google Search Ads:** draf judul/deskripsi responsif, keyword frasa/tepat, lokasi, total budget, bid CPC dan jadwal. Google Ads API v26 memakai validasi sebelum atomic create dalam jeda, readback, persetujuan aktivasi, sinkron dan jeda. Koneksi OAuth disimpan lokal, terpisah dari Meta. Belum diuji dengan akun Google Ads nyata.
 
-## Batas versi 1.1
+## Batas versi 1.2
 
-**Posting organik masih manual.** Belum ada AI generatif atau sinkronisasi chat WhatsApp. Menu **Iklan berbayar** berbeda dari status materi organik: status iklan/metrik dapat dibaca melalui API Meta setelah koneksi disiapkan. Format awal hanya iklan gambar untuk klik website HTTPS, akun IDR, feed Facebook/Instagram. Belum mendukung iklan khusus percakapan WhatsApp, video/Reels, atau pembelian iklan di TikTok/Google/kanal lain. Tidak menjamin persetujuan, penayangan, jangkauan, atau pemesanan. GitHub menyimpan kode.
+**Posting organik masih manual.** Belum ada AI generatif atau sinkronisasi chat WhatsApp. Status iklan/metrik dibaca dari API Meta atau Google setelah koneksi masing-masing disiapkan. Meta mendukung gambar untuk klik website HTTPS pada feed Facebook/Instagram; Google mendukung Search teks responsif dengan budget total dan akun IDR/WIB. Belum ada iklan khusus percakapan WhatsApp, video/Reels, atau pembelian iklan TikTok/kanal lain. Tidak menjamin persetujuan, penayangan, jangkauan atau pemesanan. GitHub menyimpan kode.
 
 Tidak ada pesan massal, scraping grup, atau pengiriman ke kontak. Tautan pelacakan menghitung *permintaan HTTP*, termasuk kemungkinan bot/pratinjau, bukan jumlah orang unik. Klik tidak membuktikan chat atau booking. Tidak mencatat alamat IP atau user agent untuk analitik.
 
@@ -43,7 +44,7 @@ Tidak ada bundling: `npm run build` memeriksa sintaks server, domain, dan JavaSc
 3. Pilih kanal dan tekan **Siapkan materi**. Tinjau caption, harga, ketersediaan, tanggal, dan arahan visual.
 4. Siapkan foto/video asli. Tandai siap, salin caption, dan publikasikan melalui akun masing-masing. Pada Instagram/TikTok, tempatkan tautan pada lokasi yang bisa diklik seperti profil jika tersedia.
 5. Setelah benar-benar dipublikasikan, **Tandai sudah tayang**. Aplikasi tidak mengirim posting.
-6. Untuk iklan berbayar Facebook/Instagram dari aplikasi, ikuti [docs/IKLAN-META.md](docs/IKLAN-META.md). Siapkan pembayaran di Meta dan koneksi Marketing API terlebih dahulu. Iklan kanal lain tetap diatur melalui pengelola iklan masing-masing.
+6. Untuk iklan berbayar dari aplikasi, ikuti [panduan Meta](docs/IKLAN-META.md) atau [panduan Google Ads](docs/IKLAN-GOOGLE.md). Siapkan pembayaran dan akses API masing-masing; pengaturan organik tidak otomatis menghubungkan akun iklan.
 7. Catat biaya total aktual dan setiap calon pelanggan. Ubah ke Booking saat pemesanan benar-benar terkonfirmasi. Nilai booking bukan kas diterima atau laba.
 
 Perubahan identitas memperbarui tujuan tautan. Baca ulang caption lama untuk mengganti nama/area atau teks kontak yang Anda tulis sendiri. Tautan yang telah disalin ke platform tidak otomatis berubah bila merupakan tautan langsung; ganti posting lama secara manual bila perlu.
@@ -80,8 +81,10 @@ npm start
 
 Pengaturan `.env` dan database di `data/` tetap digunakan. Setup Meta opsional: hentikan proses, jalankan `npm run meta:setup`, isi koneksi di terminal pribadi, lalu `npm start` dan pilih **Iklan berbayar → Periksa koneksi**. Jangan mengirim token ke chat atau menyimpannya di GitHub.
 
+Untuk Google: siapkan akun pengiklan IDR/WIB, akses Google Ads API pada proyek Cloud, dan OAuth Client Desktop, lalu `npm run google:setup`. Setelah itu `npm start` dan **Google Ads → Periksa koneksi Google**. Setup tidak menimpa pengaturan Meta atau database. Lihat panduan Google untuk login callback lokal dan akses akun produksi.
+
 ## Rencana pengembangan berikutnya
 
-Setelah pengujian live dengan akun pemilik, pengembangan dapat menambahkan iklan khusus percakapan WhatsApp, OAuth untuk pengelolaan token, publikasi organik otomatis, serta format/kanal tambahan. Persyaratan izin dan peninjauan masing-masing platform perlu dikonfirmasi.
+Setelah pengujian live dengan akun pemilik, pengembangan dapat menambahkan iklan khusus percakapan WhatsApp, OAuth Meta untuk pengelolaan token, publikasi organik otomatis, serta format/kanal tambahan. Persyaratan izin dan peninjauan masing-masing platform perlu dikonfirmasi.
 
 Dokumentasi resmi awal: [Iklan Facebook/Instagram ke WhatsApp](https://whatsappbusiness.com/products/ads-that-click-to-whatsapp/), [YouTube upload API dan OAuth](https://developers.google.com/youtube/data/guides/uploading_a_video), [Node SQLite](https://nodejs.org/api/sqlite.html).
