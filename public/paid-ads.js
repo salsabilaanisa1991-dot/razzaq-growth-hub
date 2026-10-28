@@ -1,0 +1,67 @@
+const $=s=>document.querySelector(s);
+const e=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rp=n=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(Number(n)||0);
+const localTime=ms=>new Date(ms+7*3600000).toISOString().slice(0,16);
+const label={draft:'Draf lokal',submitting:'Sedang dikirim',paused:'Jeda di Meta',needs_review:'Perlu diperiksa',activating:'Proses aktivasi',activation_requested:'Aktivasi dikirim'};
+let ctx,selectedLocations=[];
+const btn=(action,text,id='',primary=false)=>`<button type="button" class="${primary?'primary':'secondary'}" data-paid-action="${action}" data-id="${id}">${text}</button>`;
+function summary(d){return `<div class="campaign-meta"><div><span>Total anggaran sepanjang jadwal</span><strong>${rp(d.budgetTotal)}</strong></div><div><span>Penempatan feed</span>${d.placements.map(e).join(', ')}</div><div><span>Mulai WIB</span>${e(d.startTime.replace('T',' '))}</div><div><span>Selesai WIB</span>${e(d.endTime.replace('T',' '))}</div><div><span>Usia</span>${d.ageMin}–${d.ageMax===65?'65+':d.ageMax} tahun</div><div><span>Lokasi</span>${d.locations.length?d.locations.map(l=>e(l.name)).join(', '):'Seluruh Indonesia'}</div></div>`;}
+export function renderPaidAds(context){
+  ctx=context;const {data}=ctx;
+  const connection=data.meta?.lastCheck;
+  $('#view').innerHTML=`<div class="section-head"><div><h2>Iklan berbayar langsung ke Meta.</h2><p>Iklan gambar untuk kunjungan website. Anggaran total dengan tanggal selesai.</p></div>${btn('new','+ Draf iklan','',true)}</div><section class="panel"><div class="panel-title"><div><h3>Koneksi akun iklan</h3><p class="subtitle">${connection?`${e(connection.account.name)} · ${e(connection.account.currency)} · Halaman ${e(connection.page.name)}`:data.meta?.configured?'Kredensial sudah diisi. Periksa akun sebelum mengirim iklan.':'Koneksi Meta belum diisi.'}</p></div><span class="pill ${connection?'':'orange'}">${connection?'Pernah diperiksa':data.meta?.configured?'Perlu diperiksa':'Belum terhubung'}</span></div><div class="card-actions">${btn('setup','Panduan koneksi')}${btn('check','Periksa koneksi')}</div><p class="subtitle">Pemeriksaan terakhir: ${connection?e(new Date(connection.checkedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})):'belum ada'}. Pembayaran dan izin akun dikelola melalui Meta.</p></section><div class="notice ads-notice">Kirim ke Meta membuat kampanye dalam status jeda. Aktivasi dilakukan setelah pemeriksaan akhir dan persetujuan total anggaran. Status tayang tetap mengikuti pemeriksaan dan penayangan Meta. Versi ini mengoptimalkan klik ke website, belum iklan khusus percakapan WhatsApp.</div><div id="paid-list" class="campaign-grid">${(data.paidAds||[]).length?data.paidAds.map(d=>`<article class="campaign-card"><div class="card-head"><h3>${e(d.name)}</h3><span class="pill ${d.state==='needs_review'?'orange':''}">${label[d.state]||e(d.state)}</span></div><img class="ad-photo" src="/api/paid-ads/${d.id}/image" alt="Foto materi ${e(d.name)}" loading="lazy"><h3>${e(d.title)}</h3><p class="offer">${e(d.message)}</p><a class="ad-url" href="${e(d.website)}" target="_blank" rel="noopener noreferrer">${e(d.website)}</a>${summary(d)}${d.error?`<p class="error">${e(d.error)}</p>`:''}${d.remote?.adId?`<p class="subtitle">ID iklan: ${e(d.remote.adId)} · Status Meta terakhir: ${e(d.snapshot?.ad?.effective_status || 'belum disinkronkan')}</p>`:''}${d.insights?`<div class="campaign-meta"><div><span>Pengeluaran menurut Meta</span>${rp(d.insights.spend)}</div><div><span>Klik / tayangan</span>${e(d.insights.clicks)} / ${e(d.insights.impressions)}</div></div><p class="subtitle">Sinkron: ${e(new Date(d.syncedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'}))}. Angka Meta terpisah dari catatan biaya manual.</p>`:''}<div class="card-actions">${d.state==='draft'?`${btn('edit','Edit draf',d.id)}${btn('submit','Kirim ke Meta · jeda',d.id,true)}`:''}${['paused','needs_review'].includes(d.state)&&d.remote?.adId?btn('review','Periksa & aktifkan',d.id,true):''}${d.remote?.campaignId?btn('pause','Jeda di Meta',d.id):''}${d.remote?.adId?btn('sync','Sinkronkan status',d.id):''}${d.accountId?`<a class="button" href="https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${e(d.accountId)}" target="_blank" rel="noopener noreferrer">Ads Manager ↗</a>`:''}</div></article>`).join(''):'<div class="empty"><h3>Belum ada draf iklan berbayar</h3><p>Buat draf dengan foto, lokasi, jadwal, dan total anggaran. Draf dapat disiapkan sebelum akun Meta dihubungkan.</p></div>'}</div>`;
+}
+async function readImage(file){
+  if(!file || !file.size)return '';
+  if(!['image/jpeg','image/png'].includes(file.type) || file.size>5*1024*1024)throw Error('Pilih foto JPG/PNG maksimal 5 MB.');
+  return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(Error('Foto tidak dapat dibaca.'));r.readAsDataURL(file);});
+}
+function locationsUI(){const el=$('#ads-selected-locations');if(el)el.innerHTML=selectedLocations.length?selectedLocations.map((l,i)=>`<span class="pill">${e(l.name)} ${btn('remove-location','×',String(i))}</span>`).join(''):'<span class="subtitle">Belum memilih kota/provinsi: seluruh Indonesia.</span>';}
+function editAd(id){
+  const {data,showModal,api}=ctx;
+  const campaigns=data.campaigns.filter(c=>!c.archived);
+  if(!campaigns.length){ctx.toast('Buat kampanye promosi dahulu.');return;}
+  const d=(data.paidAds||[]).find(x=>x.id===id);
+  const first=data.campaigns.find(c=>c.id===d?.campaignId)||campaigns[0];
+  selectedLocations=d?.locations ? structuredClone(d.locations) : [];
+  const start=d?.startTime || localTime(Date.now()+3600000),end=d?.endTime || localTime(Date.now()+7*86400000);
+  showModal(d?'Edit draf iklan':'Draf iklan berbayar',`<label>Kampanye promosi<select name="campaignId">${campaigns.map(c=>`<option value="${c.id}" ${c.id===(d?.campaignId||first.id)?'selected':''}>${e(c.name)}</option>`).join('')}</select></label><label>Nama iklan<input name="name" required maxlength="100" value="${e(d?.name||first.name)}"></label><label>Judul yang tampil<input name="title" required maxlength="80" value="${e(d?.title||'Sewa Mobil di Yogyakarta')}"></label><label>Isi iklan<textarea name="message" required maxlength="2000">${e(d?.message||first.offer)}</textarea></label><label>Foto mobil asli · JPG/PNG maksimal 5 MB<input type="file" name="photo" accept="image/jpeg,image/png" ${d?'':'required'}></label>${d?`<img class="ad-photo" src="/api/paid-ads/${d.id}/image" alt="Foto saat ini">`:''}<label>Website tujuan HTTPS<input type="url" name="website" required value="${e(d?.website||data.settings.website)}"><small>Format iklan kunjungan website. Iklan khusus chat WhatsApp belum tersedia.</small></label><label>Total anggaran selama seluruh jadwal (Rp)<input type="number" min="1" max="1000000000" step="1" name="budgetTotal" required value="${d?.budgetTotal||''}" placeholder="Masukkan batas anggaran yang Anda tentukan"><small>Ini anggaran sepanjang jadwal, bukan per hari. Pajak/biaya Meta mengikuti tagihan akun.</small></label><div class="field-grid"><label>Mulai (WIB)<input type="datetime-local" name="startTime" required value="${e(start)}"></label><label>Selesai (WIB)<input type="datetime-local" name="endTime" required value="${e(end)}"></label><label>Usia minimum<input type="number" name="ageMin" required min="18" max="65" value="${d?.ageMin||18}"></label><label>Usia maksimum · 65 berarti 65+<input type="number" name="ageMax" required min="18" max="65" value="${d?.ageMax||65}"></label></div><fieldset><legend>Penempatan feed</legend><div class="check-grid">${['facebook','instagram'].map(p=>`<label><input type="checkbox" name="placements" value="${p}" ${(d?.placements||['facebook']).includes(p)?'checked':''}>${p==='facebook'?'Facebook':'Instagram'}</label>`).join('')}</div></fieldset><label>Batasi lokasi ke kota/provinsi di Indonesia<input id="ads-location-query" placeholder="Contoh: Yogyakarta atau Jakarta" maxlength="80"></label>${btn('search-location','Cari lokasi di Meta')}<div id="ads-location-results" class="ads-locations"></div><div id="ads-selected-locations" class="chips"></div><p class="subtitle">Pencarian lokasi memerlukan koneksi Meta. Tanpa lokasi pilihan, iklan ditujukan ke seluruh Indonesia.</p>`,async f=>{
+    const image=await readImage(f.get('photo'));
+    const payload={...Object.fromEntries(f),placements:f.getAll('placements'),locations:selectedLocations,...(image?{image}:{})};delete payload.photo;
+    await api(id?`paid-ads/${id}`:'paid-ads',id?'PATCH':'POST',payload);
+  },'Simpan draf · belum dikirim');
+  locationsUI();
+}
+function setup(){ctx.showModal('Hubungkan akun iklan Meta',`<div class="steps"><div class="step"><div><strong>Siapkan akun iklan dan Halaman</strong><p>Akun iklan harus aktif, memiliki metode pembayaran di Meta, dan menggunakan mata uang IDR. Pastikan Anda berhak mengelola iklan serta Halamannya.</p></div></div><div class="step"><div><strong>Siapkan akses Marketing API</strong><p>Gunakan aplikasi Meta dan token dengan izin ads_management serta akses Halaman. App Review/verifikasi bergantung tipe akses dan akun. Instagram membutuhkan akun profesional yang terhubung.</p></div></div><div class="step"><div><strong>Isi koneksi di terminal aplikasi</strong><p>Hentikan aplikasi dengan Ctrl+C, jalankan <code>npm run meta:setup</code>, isi token dan ID akun/Halaman pada terminal pribadi, lalu jalankan <code>npm start</code>. Token tidak dimasukkan ke GitHub atau chat.</p></div></div><div class="step"><div><strong>Periksa koneksi</strong><p>Kembali ke menu Iklan berbayar dan tekan Periksa koneksi. Kegagalan izin/pembayaran dijelaskan dari respons Meta. Menyimpan token tidak otomatis berarti koneksi sudah terverifikasi.</p></div></div></div><a class="button" href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer">Dashboard aplikasi Meta ↗</a>`,async()=>{},'Tutup');}
+document.addEventListener('click',async event=>{
+  const b=event.target.closest('[data-paid-action]');if(!b||!ctx)return;
+  const {paidAction:action,id}=b.dataset;
+  const {api,refresh,toast,showModal,data}=ctx;
+  b.disabled=true;
+  try{
+    if(action==='new')editAd();
+    else if(action==='edit')editAd(id);
+    else if(action==='setup')setup();
+    else if(action==='check'){await api('meta/check','POST',{});await refresh();toast('Koneksi akun dan Halaman berhasil diperiksa.');}
+    else if(action==='search-location'){
+      const rows=await api(`meta/locations?q=${encodeURIComponent($('#ads-location-query').value)}`);
+      $('#ads-location-results').innerHTML=rows.length?rows.map(l=>`<button type="button" class="secondary" data-paid-action="add-location" data-location="${e(JSON.stringify(l))}">${e(l.name)}${l.region?`, ${e(l.region)}`:''} · ${e(l.type)}</button>`).join(''):'<p class="subtitle">Lokasi belum ditemukan. Coba nama lain.</p>';
+    }else if(action==='add-location'){
+      const l=JSON.parse(b.dataset.location);if(!selectedLocations.some(x=>x.key===l.key&&x.type===l.type))selectedLocations.push(l);locationsUI();
+    }else if(action==='remove-location'){selectedLocations.splice(Number(id),1);locationsUI();}
+    else if(action==='submit'){
+      if(!confirm('Kirim foto dan draf ini ke akun Meta yang dikonfigurasi? Kampanye dibuat dalam status JEDA. Aktivasi berbayar dilakukan terpisah.'))return;
+      await api(`paid-ads/${id}/submit`,'POST',{confirmed:true});await refresh();toast('Iklan dibuat di Meta dalam status jeda.');
+    }else if(action==='sync'){await api(`paid-ads/${id}/sync`,'POST',{});await refresh();toast('Status dan metrik Meta diperbarui.');}
+    else if(action==='pause'){await api(`paid-ads/${id}/pause`,'POST',{});await refresh();toast('Meta mengonfirmasi kampanye dijeda.');}
+    else if(action==='review'){
+      const review=await api(`paid-ads/${id}/review`,'POST',{}),d=review.ad;
+      showModal('Pemeriksaan akhir sebelum aktivasi',`<div class="notice">Setelah aktivasi, Meta dapat mulai membelanjakan anggaran mengikuti jadwal dan persetujuan iklan. Pemeriksaan ini berlaku 5 menit.</div><p><strong>${e(review.account.name)}</strong> · ID ${e(d.accountId)} · ${e(review.account.currency)}</p><p class="subtitle">Halaman: ${e(review.page.name)} · ${e(d.pageId)}</p><img class="ad-photo" src="/api/paid-ads/${d.id}/image" alt="Foto iklan yang disetujui"><h3>${e(d.title)}</h3><p class="offer ads-message">${e(d.message)}</p><p class="ad-url">${e(d.website)}</p>${summary(d)}<label>Ulangi total anggaran (Rp)<input name="budgetTotal" type="number" required min="1" step="1" placeholder="${d.budgetTotal}"></label><label>Ketik AKTIFKAN<input name="confirmText" required pattern="AKTIFKAN" autocomplete="off"></label><label class="check-label"><input name="confirmed" type="checkbox" required>Saya menyetujui akun, materi, audiens, jadwal, dan total anggaran di atas untuk diaktifkan.</label>`,async f=>{
+        await api(`paid-ads/${id}/activate`,'POST',{approvalToken:review.approvalToken,budgetTotal:Number(f.get('budgetTotal')),confirmText:f.get('confirmText'),confirmed:f.has('confirmed')});
+      },'Aktifkan iklan berbayar');
+    }
+  }catch(err){
+    const modal=$('#modal');if(modal.open)$('#modal-error').textContent=err.message;
+    else{await refresh().catch(()=>{});$('#app-error').textContent=err.message;$('#app-error').hidden=false;$('#app-error').scrollIntoView({block:'nearest'});}
+  }finally{b.disabled=false;}
+});

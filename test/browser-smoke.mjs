@@ -1,0 +1,70 @@
+// Optional developer check: install Playwright separately and provide a Chromium executable.
+// This script always injects fake Meta transport and never contacts a real ad account.
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync,mkdirSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {once} from 'node:events';
+import {createApp} from '../server.mjs';
+import {DEFAULT_SETTINGS} from '../domain.mjs';
+import {fakeMeta,cfg} from './fake-meta.mjs';
+
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const dir=mkdtempSync(join(tmpdir(),'growth-browser-')),meta=fakeMeta();
+const server=createApp({dataDir:dir,password:'browser-test-password',meta:{config:cfg,fetchImpl:meta.fetchImpl}});
+server.listen(0,'127.0.0.1');await once(server,'listening');
+const base=`http://127.0.0.1:${server.address().port}`;
+let browser;
+try{
+  const login=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json','X-Growth-Request':'1'},body:JSON.stringify({password:'browser-test-password'})});
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  const seed=async(path,method,payload)=>{const r=await fetch(base+'/api/'+path,{method,headers:{'Content-Type':'application/json','X-Growth-Request':'1',Cookie:cookie},body:JSON.stringify(payload)});assert.equal(r.ok,true);return r.json();};
+  await seed('settings','PUT',{...DEFAULT_SETTINGS,contactVerified:true});
+  await seed('campaigns','POST',{name:'Promosi QA',offer:'Informasi paket dan ketersediaan dikonfirmasi admin.',audience:'Wisatawan keluarga',start:'2026-11-01',end:'2026-11-07',budget:0,channels:['Facebook'],target:'website'});
+  browser=await chromium.launch({headless:true,...(process.env.BROWSER_EXECUTABLE?{executablePath:process.env.BROWSER_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-zygote','--single-process']}:{} )});
+  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+  page.on('pageerror',err=>errors.push(err.message));
+  page.on('dialog',d=>d.accept());
+  page.setDefaultTimeout(10000);
+  await page.goto(base);await page.locator('#login-form').waitFor({state:'visible'});
+  await page.locator('#login-form input').fill('browser-test-password');await page.locator('#login-form button').click();await page.locator('#shell').waitFor({state:'visible'});
+  await page.locator('nav a[data-page="ads"]').click();await page.getByRole('button',{name:'+ Draf iklan'}).click();
+  await page.locator('#modal input[name="budgetTotal"]').fill('125000');
+  const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
+  await page.locator('input[type=file]').setInputFiles({name:'qa.png',mimeType:'image/png',buffer:bytes});
+  await page.locator('#modal-submit').click();await page.locator('#modal').waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Edit draf',exact:true}).click();
+  await page.locator('#ads-location-query').fill('Yogyakarta');await page.getByRole('button',{name:'Cari lokasi di Meta',exact:true}).click();
+  await page.locator('[data-paid-action="add-location"]').click();
+  assert.equal(await page.locator('#modal').isVisible(),true);
+  await page.locator('#modal-submit').click();await page.locator('#modal').waitFor({state:'hidden'});
+  const overflow=()=>page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
+  assert.equal(await overflow(),false);
+  const output=process.env.QA_SCREENSHOT_DIR || join(tmpdir(),'growth-browser-qa');mkdirSync(output,{recursive:true});
+  await page.screenshot({path:join(output,'paid-desktop.png'),fullPage:true});
+  await page.getByRole('button',{name:'Kirim ke Meta · jeda',exact:true}).click();
+  await page.getByRole('button',{name:'Periksa & aktifkan',exact:true}).waitFor();
+  assert.equal(meta.calls.some(c=>c.params.status==='ACTIVE'),false);
+  await page.getByRole('button',{name:'Periksa & aktifkan',exact:true}).click();
+  await page.locator('#modal input[name="budgetTotal"]').fill('1');
+  await page.locator('#modal input[name="confirmText"]').fill('AKTIFKAN');
+  await page.locator('#modal input[name="confirmed"]').check();
+  await page.locator('#modal-submit').click();await page.locator('#modal-error').filter({hasText:'Persetujuan aktivasi tidak cocok'}).waitFor();
+  assert.equal(meta.calls.some(c=>c.params.status==='ACTIVE'),false);
+  await page.locator('#modal input[name="budgetTotal"]').fill('125000');
+  await page.screenshot({path:join(output,'paid-approval-desktop.png'),fullPage:true});
+  await page.locator('#modal-submit').click();await page.locator('#modal').waitFor({state:'hidden'});
+  assert.equal(meta.calls.filter(c=>c.params.status==='ACTIVE').length,3);
+  await page.getByRole('button',{name:'Sinkronkan status',exact:true}).click();await page.getByText('PENDING_REVIEW',{exact:false}).waitFor();
+  await page.getByRole('button',{name:'Jeda di Meta',exact:true}).click();await page.locator('.pill').filter({hasText:'Jeda di Meta'}).waitFor();
+  await page.setViewportSize({width:390,height:844});assert.equal(await overflow(),false);
+  await page.screenshot({path:join(output,'paid-mobile.png'),fullPage:true});
+  await page.getByRole('button',{name:'+ Draf iklan'}).click();assert.equal(await overflow(),false);
+  await page.screenshot({path:join(output,'paid-form-mobile.png'),fullPage:true});
+  await page.locator('#close-modal').click();
+  assert.deepEqual(errors,[]);
+  console.log('BROWSER_SMOKE_PASS: login, draft/photo, location search, paused submit, wrong-budget rejection, activation, sync, pause; desktop 1440 and mobile 390; no JS page errors or page overflow.');
+  console.log('Screenshots:',output);
+}finally{
+  if(browser)await browser.close();await new Promise(r=>server.close(r));rmSync(dir,{recursive:true,force:true});
+}

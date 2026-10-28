@@ -1,17 +1,30 @@
-# Verifikasi versi 1
+# Verifikasi versi 1.1
 
-Dilakukan pada lingkungan Node.js 24.22.1:
+Lingkungan Node.js 24.22.1. Pengujian integrasi Meta menggunakan transport simulasi, tanpa token/akun nyata.
 
-- `npm install --ignore-scripts`: berhasil; tidak ada dependensi eksternal.
-- `npm run build`: pemeriksaan sintaks server, domain, dan JavaScript browser lulus.
-- `npm test`: 3 kelompok pengujian lulus. Termasuk permintaan HTTP nyata ke server sementara: login/logout, cookie, CSRF, harga/tanggal/URL tidak valid, pembuatan kampanye, verifikasi kontak, enam kanal materi, pencegahan duplikat, edit materi dan transisi status, redirect/UTM, penghitung permintaan, pelanggan/booking, biaya, ekspor, perubahan nomor kontak, pengarsipan, serta database setelah restart.
-- Server aplikasi berhasil dimulai pada loopback. Endpoint static membatasi file yang dapat dibaca; `.env` dan sumber server tidak disajikan.
+## Pemeriksaan yang dilakukan
 
-Belum diverifikasi:
+- `npm install --ignore-scripts`: berhasil; aplikasi tidak menambah dependensi runtime.
+- `npm run build`: pemeriksaan sintaks server, domain, adapter Meta, service iklan berbayar, script setup, dan dua modul browser lulus.
+- `npm test`: **11 kelompok pengujian lulus**. Alur lama tetap diuji: autentikasi, CSRF, kampanye, enam kanal materi, pelanggan, biaya, ekspor dan persistensi setelah restart. Alur baru diuji melalui HTTP nyata dengan API Meta simulasi: validasi foto/URL/budget/jadwal, koneksi kosong, draf, upload paused, jumlah budget IDR persis, urutan aktivasi, konfirmasi budget, perubahan eksternal, permintaan ganda, kegagalan parsial, currency yang tidak didukung, jeda pemulihan, sinkron metrik, serta penyaringan rahasia.
+- `test/browser-smoke.mjs` dengan Playwright dan Chromium 153: **lulus**. Menggunakan server sementara dan Meta simulasi. Login melalui UI, membuat draf/foto, mengedit dan mencari lokasi, mengirim paused, penolakan angka anggaran yang salah, aktivasi, sinkron status, dan jeda berhasil. Tampilan diperiksa pada desktop 1440×1000 dan HP 390×844. Tidak ada JavaScript page error atau halaman melebar keluar viewport; screenshot desktop, HP, formulir, dan persetujuan diperiksa.
+- Token tidak muncul pada daftar data, respons status, pesan error yang diuji, atau ekspor. Data gambar diambil dari endpoint admin tersendiri, bukan dikirim pada daftar data.
 
-- Tampilan desktop/HP, interaksi browser, console dan overflow. Playwright tersedia, tetapi binary browser tidak terpasang; unduhan Chromium gagal sehingga pemeriksaan visual tidak dapat dijalankan pada lingkungan ini. CSS responsif sudah ditulis tetapi perlu diperiksa pada perangkat sebenarnya.
-- DNS, HTTPS, VPS, dan akses publik tautan; panduan hosting disertakan, belum dilakukan deployment.
-- GitHub Actions: tes lokal lulus. Periksa hasil workflow di tab Actions repo untuk mengetahui hasil pada lingkungan GitHub.
-- Akun medsos, API publikasi, akun iklan, pembayaran, dan sinkronisasi data platform tidak dihubungkan. Tidak ada posting, pesan, atau iklan yang diterbitkan oleh proyek ini.
+Pengujian browser opsional untuk pengembang, terpisah dari runtime aplikasi:
 
-Sebelum penggunaan operasional: jalankan dari README, periksa form pada HP, simpan kampanye, tinjau draf, coba salin/ekspor, serta verifikasi nomor WhatsApp dan rincian penawaran. Jangan memasukkan pengeluaran/booking uji seolah hasil promosi nyata.
+```bash
+npm install --no-save --package-lock=false playwright
+npx playwright install chromium
+npm run test:browser
+```
+
+Atau tentukan `PLAYWRIGHT_MODULE` dan `BROWSER_EXECUTABLE` bila binary/module dikelola lingkungan. Script selalu menyuntikkan API Meta palsu dan tidak menjalankan iklan sungguhan. Screenshot QA disimpan pada folder temporary kecuali `QA_SCREENSHOT_DIR` diisi; bukan berkas pengguna.
+
+## Batas verifikasi
+
+- Belum ada token Meta, akun iklan/pembayaran live, atau pengiriman iklan nyata. Kelayakan akun, izin API, App Review, format creative, minimum budget, respons readback, dan penayangan perlu diverifikasi dengan akun pemilik. Lulus simulasi tidak membuktikan integrasi live siap pada setiap akun/versi API.
+- Belum dilakukan deployment VPS, DNS atau HTTPS. Pengguna sudah memperlihatkan aplikasi versi sebelumnya berjalan pada perangkat lokal; server pengujian versi ini dijalankan sementara untuk pengujian browser.
+- Workflow GitHub menjalankan build dan pengujian backend pada push/PR. Periksa tab Actions untuk hasil commit terbaru. Pemeriksaan browser pengembangan tidak menjadi bagian workflow standar.
+- Posting organik dan kanal selain iklan Facebook/Instagram masih manual. Iklan khusus chat WhatsApp belum diimplementasikan.
+
+Sebelum penggunaan live: hubungkan akun pemilik dari terminal pribadi, periksa koneksi, siapkan draf foto dan website yang valid, kirim ke Meta dalam status jeda, periksa hasil melalui aplikasi dan Ads Manager, lalu setujui akun/materi/target/jadwal/budget yang konkret. Mematikan aplikasi tidak menghentikan iklan yang sudah diaktifkan pada Meta.
